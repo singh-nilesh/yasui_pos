@@ -158,7 +158,7 @@ class _DataTableWidgetState extends State<DataTableWidget> {
                 child: DataTable(
                   sortColumnIndex: _sortColumnIndex,
                   sortAscending: _sortAscending,
-                  headingRowColor: MaterialStateProperty.all(Colors.grey[100]),
+                  headingRowColor: WidgetStateProperty.all(Colors.grey[100]),
                   dataRowMaxHeight: 60,
                   columns: _buildColumns(),
                   rows: _buildRows(displayedRows.cast<Map<String, dynamic>>()),
@@ -254,6 +254,8 @@ class _DataTableWidgetState extends State<DataTableWidget> {
       return DataColumn(
         label: Text(
           column,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         onSort: (columnIndex, ascending) {
@@ -302,7 +304,11 @@ class _DataTableWidgetState extends State<DataTableWidget> {
       return DataCell(
         cellValue == null 
             ? const Text('—', style: TextStyle(color: Colors.grey))
-            : Text(cellValue.toString()),
+            : Text(
+                cellValue.toString(),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
       );
     }).toList();
     

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'widgets/sidebar.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/shop_screen.dart';
 import 'screens/inventory_screen.dart';
@@ -75,168 +76,67 @@ class MainLayout extends StatefulWidget {
 }
 
 class _MainLayoutState extends State<MainLayout> {
-  int _selectedIndex = 0;
+  int _selectedIndex = 2;
   bool _sidebarExpanded = true;
-  
+
   // Navigation items with icons and labels
   final List<Map<String, dynamic>> _navItems = [
     {
       'icon': Icons.dashboard_rounded,
       'label': 'Dashboard',
-      'screen': const DashboardScreen(),
+      'screen': DashboardScreen(),
     },
     {
       'icon': Icons.store_rounded,
       'label': 'Shop',
-      'screen': const ShopScreen(),
+      'screen': ShopScreen(),
     },
     {
       'icon': Icons.inventory_rounded,
       'label': 'Inventory',
-      'screen': const InventoryScreen(),
+      'screen': InventoryScreen(),
     },
     {
       'icon': Icons.people_alt_rounded,
       'label': 'Customers',
-      'screen': const CustomersScreen(),
+      'screen': CustomersScreen(),
     },
     {
       'icon': Icons.event_repeat_rounded,
       'label': 'AMC',
-      'screen': const AMCScreen(),
+      'screen': AMCScreen(),
     },
   ];
-  
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 1200;
-    
+
     // Automatically collapse sidebar on small screens
     if (isSmallScreen && _sidebarExpanded) {
       _sidebarExpanded = false;
     }
-    
+
     return Scaffold(
       body: Row(
         children: [
-          // Sidebar
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: _sidebarExpanded ? 240 : 80,
-            color: const Color(0xFF1A237E),
-            child: Column(
-              children: [
-                // Logo/App name
-                Container(
-                  height: 80,
-                  alignment: Alignment.center,
-                  child: _sidebarExpanded 
-                    ? const Text(
-                        'YASUI POS',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.2,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.point_of_sale,
-                        color: Colors.white,
-                        size: 32,
-                      ),
-                ),
-                
-                // Divider
-                const Divider(
-                  color: Colors.white24,
-                  height: 1,
-                ),
-                
-                // Navigation items
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: _navItems.length,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    itemBuilder: (context, index) {
-                      final item = _navItems[index];
-                      final isSelected = _selectedIndex == index;
-                      
-                      return Container(
-                        margin: const EdgeInsets.symmetric(
-                          vertical: 4,
-                          horizontal: 16,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected 
-                              ? Colors.white.withOpacity(0.1) 
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: ListTile(
-                          leading: Icon(
-                            item['icon'],
-                            color: isSelected 
-                                ? Colors.white 
-                                : Colors.white70,
-                          ),
-                          title: _sidebarExpanded 
-                              ? Text(
-                                  item['label'],
-                                  style: TextStyle(
-                                    color: isSelected 
-                                        ? Colors.white 
-                                        : Colors.white70,
-                                    fontWeight: isSelected 
-                                        ? FontWeight.bold 
-                                        : FontWeight.normal,
-                                  ),
-                                )
-                              : null,
-                          minLeadingWidth: 0,
-                          onTap: () {
-                            setState(() {
-                              _selectedIndex = index;
-                            });
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                
-                // Toggle sidebar expansion
-                Container(
-                  margin: const EdgeInsets.all(16),
-                  child: InkWell(
-                    onTap: () {
-                      if (!isSmallScreen || !_sidebarExpanded) {
-                        setState(() {
-                          _sidebarExpanded = !_sidebarExpanded;
-                        });
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(50),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(50),
-                      ),
-                      child: Icon(
-                        _sidebarExpanded 
-                            ? Icons.chevron_left 
-                            : Icons.chevron_right,
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          Sidebar(
+            selectedIndex: _selectedIndex,
+            expanded: _sidebarExpanded,
+            navItems: _navItems,
+            onItemSelected: (index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+            },
+            onToggle: () {
+              setState(() {
+                _sidebarExpanded = !_sidebarExpanded;
+              });
+            },
+            isSmallScreen: isSmallScreen,
           ),
-          
           // Main content
           Expanded(
             child: Column(

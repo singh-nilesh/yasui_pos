@@ -13,62 +13,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Summary Cards
-          Row(
-            children: [
-              Expanded(
-                child: InfoCard(
-                  title: 'Total Machines in Stock',
-                  value: '45',
-                  icon: Icons.precision_manufacturing,
-                  iconColor: Colors.indigo,
-                  subtitle: '+3 since last month',
-                  onTap: () {},
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Summary Cards
+            Row(
+              children: [
+                Expanded(
+                  child: InfoCard(
+                    title: 'Total Machines in Stock',
+                    value: '45',
+                    icon: Icons.precision_manufacturing,
+                    iconColor: Colors.indigo,
+                    subtitle: '+3 since last month',
+                    onTap: () {},
+                    width: 180, // Set a fixed width to prevent overflow
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: InfoCard(
-                  title: 'Spare Parts in Stock',
-                  value: '1,248',
-                  icon: Icons.settings,
-                  iconColor: Colors.blue,
-                  subtitle: '-52 since last month',
-                  onTap: () {},
+                const SizedBox(width: 16),
+                Expanded(
+                  child: InfoCard(
+                    title: 'Spare Parts in Stock',
+                    value: '1,248',
+                    icon: Icons.settings,
+                    iconColor: Colors.blue,
+                    subtitle: '-52 since last month',
+                    onTap: () {},
+                    width: 180, // Set a fixed width to prevent overflow
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: InfoCard(
-                  title: 'Total Sales (2025)',
-                  value: '₹12.4M',
-                  icon: Icons.attach_money,
-                  iconColor: Colors.green,
-                  subtitle: '+18% compared to 2024',
-                  onTap: () {},
+                const SizedBox(width: 16),
+                Expanded(
+                  child: InfoCard(
+                    title: 'Total Sales (2025)',
+                    value: '₹12.4M',
+                    icon: Icons.attach_money,
+                    iconColor: Colors.green,
+                    subtitle: '+18% compared to 2024',
+                    onTap: () {},
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: InfoCard(
-                  title: 'Pending Import Orders',
-                  value: '8',
-                  icon: Icons.local_shipping,
-                  iconColor: Colors.orange,
-                  subtitle: '3 arriving this week',
-                  onTap: () {},
+                const SizedBox(width: 16),
+                Expanded(
+                  child: InfoCard(
+                    title: 'Pending Import Orders',
+                    value: '8',
+                    icon: Icons.local_shipping,
+                    iconColor: Colors.orange,
+                    subtitle: '3 arriving this week',
+                    onTap: () {},
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          
-          // Main Content
-          Expanded(
-            child: Row(
+              ],
+            ),
+            const SizedBox(height: 24),
+            // Main Content
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Left Column - Charts and Inventory
@@ -77,7 +78,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Column(
                     children: [
                       // Monthly Sales Chart
-                      Expanded(
+                      SizedBox(
+                        height: 220,
                         child: Card(
                           child: Padding(
                             padding: const EdgeInsets.all(16.0),
@@ -115,7 +117,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 8),
-                                
                                 // Placeholder for chart
                                 Expanded(
                                   child: Center(
@@ -149,68 +150,62 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      
                       // Inventory Overview
-                      Expanded(
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Inventory Overview',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Inventory Overview',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    TextButton.icon(
-                                      icon: const Icon(
-                                        Icons.arrow_forward,
-                                        size: 18,
+                                  ),
+                                  TextButton.icon(
+                                    icon: const Icon(
+                                      Icons.arrow_forward,
+                                      size: 18,
+                                    ),
+                                    label: const Text('View All'),
+                                    onPressed: () {},
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              // Tabs for Machines/Spare Parts
+                              const DefaultTabController(
+                                length: 2,
+                                child: Column(
+                                  children: [
+                                    TabBar(
+                                      tabs: [
+                                        Tab(text: 'Machines'),
+                                        Tab(text: 'Spare Parts'),
+                                      ],
+                                      labelColor: Color(0xFF1A237E),
+                                      unselectedLabelColor: Colors.grey,
+                                      indicatorColor: Color(0xFF1A237E),
+                                    ),
+                                    SizedBox(height: 8),
+                                    SizedBox(
+                                      height: 48 * 4.0, // 4 items max height, adjust as needed
+                                      child: TabBarView(
+                                        children: [
+                                          _MachinesInventoryTab(),
+                                          _SparePartsInventoryTab(),
+                                        ],
                                       ),
-                                      label: const Text('View All'),
-                                      onPressed: () {},
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 16),
-                                
-                                // Tabs for Machines/Spare Parts
-                                const DefaultTabController(
-                                  length: 2,
-                                  child: Column(
-                                    children: [
-                                      TabBar(
-                                        tabs: [
-                                          Tab(text: 'Machines'),
-                                          Tab(text: 'Spare Parts'),
-                                        ],
-                                        labelColor: Color(0xFF1A237E),
-                                        unselectedLabelColor: Colors.grey,
-                                        indicatorColor: Color(0xFF1A237E),
-                                      ),
-                                      SizedBox(height: 16),
-                                      Expanded(
-                                        child: TabBarView(
-                                          children: [
-                                            // Machines Tab
-                                            _MachinesInventoryTab(),
-                                            
-                                            // Spare Parts Tab
-                                            _SparePartsInventoryTab(),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -218,7 +213,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                
                 // Right Column - Reminders and Quick Actions
                 Expanded(
                   child: Column(
@@ -251,8 +245,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 ],
                               ),
                               const Divider(),
-                              
-                              // Today's AMC Visits
+                              // Only show Due Today
                               const Text(
                                 'Due Today',
                                 style: TextStyle(
@@ -261,50 +254,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              
-                              // List of today's visits
                               for (var i = 0; i < _todayVisits.length; i++) ...[
                                 _buildVisitTile(_todayVisits[i]),
                                 if (i < _todayVisits.length - 1)
                                   const Divider(height: 8),
                               ],
-                              
                               if (_todayVisits.isEmpty)
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 8.0),
                                   child: Text('No visits due today'),
                                 ),
-                              
-                              const SizedBox(height: 16),
-                              
-                              // Upcoming AMC Visits
-                              const Text(
-                                'Coming This Week',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              
-                              // List of upcoming visits
-                              for (var i = 0; i < _upcomingVisits.length; i++) ...[
-                                _buildVisitTile(_upcomingVisits[i]),
-                                if (i < _upcomingVisits.length - 1)
-                                  const Divider(height: 8),
-                              ],
-                              
-                              if (_upcomingVisits.isEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 8.0),
-                                  child: Text('No upcoming visits this week'),
-                                ),
+                              // Removed upcoming visits section
                             ],
                           ),
                         ),
                       ),
                       const SizedBox(height: 16),
-                      
                       // Import Status
                       Card(
                         child: Padding(
@@ -333,14 +298,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 ],
                               ),
                               const Divider(),
-                              
                               // List of import orders
                               for (var i = 0; i < _importOrders.length; i++) ...[
                                 _buildImportTile(_importOrders[i]),
                                 if (i < _importOrders.length - 1)
                                   const Divider(height: 8),
                               ],
-                              
                               if (_importOrders.isEmpty)
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -351,64 +314,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      
-                      // Quick Actions
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Quick Actions',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              
-                              // Action buttons
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                children: [
-                                  _buildQuickActionButton(
-                                    'New Import',
-                                    Icons.add_shopping_cart,
-                                    Colors.blue,
-                                    () {},
-                                  ),
-                                  _buildQuickActionButton(
-                                    'Add Customer',
-                                    Icons.person_add,
-                                    Colors.green,
-                                    () {},
-                                  ),
-                                  _buildQuickActionButton(
-                                    'New AMC',
-                                    Icons.calendar_month,
-                                    Colors.orange,
-                                    () {},
-                                  ),
-                                  _buildQuickActionButton(
-                                    'Schedule Visit',
-                                    Icons.event,
-                                    Colors.purple,
-                                    () {},
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -450,16 +362,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       subtitle: Text(visit['machine']),
-      trailing: visit['date'] == 'Today'
-        ? ElevatedButton(
-            onPressed: () {},
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Visit Now'),
-          )
-        : const Icon(Icons.arrow_forward_ios, size: 16),
+      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {},
     );
   }
@@ -512,43 +415,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       onTap: () {},
     );
   }
-  
-  // Helper method to build quick action buttons
-  Widget _buildQuickActionButton(
-    String label,
-    IconData icon,
-    Color color,
-    VoidCallback onPressed,
-  ) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(50),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 // Tab content for Machines inventory
@@ -567,7 +433,11 @@ class _MachinesInventoryTab extends StatelessWidget {
             children: [
               Expanded(
                 flex: 3,
-                child: Text(machine['name']),
+                child: Text(
+                  machine['name'],
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
               Expanded(
                 flex: 1,
@@ -612,7 +482,11 @@ class _SparePartsInventoryTab extends StatelessWidget {
             children: [
               Expanded(
                 flex: 3,
-                child: Text(part['name']),
+                child: Text(
+                  part['name'],
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
               Expanded(
                 flex: 1,
@@ -655,27 +529,6 @@ final List<Map<String, dynamic>> _todayVisits = [
     'machine': 'Laser Welder LW-20',
     'date': 'Today',
     'time': '2:30 PM',
-  },
-];
-
-final List<Map<String, dynamic>> _upcomingVisits = [
-  {
-    'customer': 'Star Jewellery',
-    'machine': 'Wax Injector W50',
-    'date': 'Tomorrow',
-    'time': '11:30 AM',
-  },
-  {
-    'customer': 'Classic Jewellers',
-    'machine': 'Polisher P200',
-    'date': 'May 15',
-    'time': '1:00 PM',
-  },
-  {
-    'customer': 'Modern Creations',
-    'machine': 'Laser Welder LW-20',
-    'date': 'May 17',
-    'time': '9:30 AM',
   },
 ];
 

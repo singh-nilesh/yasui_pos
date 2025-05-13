@@ -11,7 +11,7 @@ class InventoryScreen extends StatefulWidget {
 class _InventoryScreenState extends State<InventoryScreen> {
   // Selected filter
   String _selectedFilter = 'All Items';
-  List<String> _filterOptions = [
+  final List<String> _filterOptions = [
     'All Items',
     'Low Stock',
     'Recently Updated',

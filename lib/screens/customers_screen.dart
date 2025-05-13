@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../widgets/data_table_widget.dart';
 
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
