@@ -1,59 +1,46 @@
-class Machine {
+class SparePart {
   final int? id;
   final String name;
   final int? customerId;
-  final String? serialNo;
+  final int quantity;
   final DateTime? purchaseDate;
   final double? priceUsd;
   final double? priceJpy;
   final double? priceInr;
+  final String? invoice;
   final String? seller;
-  final DateTime? amcStartMonth;
-  final DateTime? amcExpireMonth;
-  final int totalVisits;
-  final int pendingVisits;
   
   // Denormalized for convenience
   final String? customerName;
 
-  const Machine({
+  SparePart({
     this.id,
     required this.name,
     this.customerId,
-    this.serialNo,
+    required this.quantity,
     this.purchaseDate,
     this.priceUsd,
     this.priceJpy,
     this.priceInr,
+    this.invoice,
     this.seller,
-    this.amcStartMonth,
-    this.amcExpireMonth,
-    this.totalVisits = 0,
-    this.pendingVisits = 0,
     this.customerName,
   });
 
-  factory Machine.fromMap(Map<String, dynamic> map) {
-    return Machine(
+  factory SparePart.fromMap(Map<String, dynamic> map) {
+    return SparePart(
       id: map['id'],
       name: map['name'],
       customerId: map['customer_id'],
-      serialNo: map['serial_no'],
+      quantity: map['quantity'],
       purchaseDate: map['purchase_date'] != null 
           ? DateTime.parse(map['purchase_date']) 
           : null,
       priceUsd: map['price_usd'],
       priceJpy: map['price_jpy'],
       priceInr: map['price_inr'],
+      invoice: map['invoice'],
       seller: map['seller'],
-      amcStartMonth: map['amc_start_month'] != null 
-          ? DateTime.parse(map['amc_start_month']) 
-          : null,
-      amcExpireMonth: map['amc_expire_month'] != null 
-          ? DateTime.parse(map['amc_expire_month']) 
-          : null,
-      totalVisits: map['total_visits'] ?? 0,
-      pendingVisits: map['pending_visits'] ?? 0,
       customerName: map['customer_name'],
     );
   }
@@ -63,49 +50,40 @@ class Machine {
       'id': id,
       'name': name,
       'customer_id': customerId,
-      'serial_no': serialNo,
+      'quantity': quantity,
       'purchase_date': purchaseDate?.toIso8601String(),
       'price_usd': priceUsd,
       'price_jpy': priceJpy,
       'price_inr': priceInr,
+      'invoice': invoice,
       'seller': seller,
-      'amc_start_month': amcStartMonth?.toIso8601String(),
-      'amc_expire_month': amcExpireMonth?.toIso8601String(),
-      'total_visits': totalVisits,
-      'pending_visits': pendingVisits,
     };
   }
 
-  Machine copyWith({
+  SparePart copyWith({
     int? id,
     String? name,
     int? customerId,
-    String? serialNo,
+    int? quantity,
     DateTime? purchaseDate,
     double? priceUsd,
     double? priceJpy,
     double? priceInr,
+    String? invoice,
     String? seller,
-    DateTime? amcStartMonth,
-    DateTime? amcExpireMonth,
-    int? totalVisits,
-    int? pendingVisits,
     String? customerName,
   }) {
-    return Machine(
+    return SparePart(
       id: id ?? this.id,
       name: name ?? this.name,
       customerId: customerId ?? this.customerId,
-      serialNo: serialNo ?? this.serialNo,
+      quantity: quantity ?? this.quantity,
       purchaseDate: purchaseDate ?? this.purchaseDate,
       priceUsd: priceUsd ?? this.priceUsd,
       priceJpy: priceJpy ?? this.priceJpy,
       priceInr: priceInr ?? this.priceInr,
+      invoice: invoice ?? this.invoice,
       seller: seller ?? this.seller,
-      amcStartMonth: amcStartMonth ?? this.amcStartMonth,
-      amcExpireMonth: amcExpireMonth ?? this.amcExpireMonth,
-      totalVisits: totalVisits ?? this.totalVisits,
-      pendingVisits: pendingVisits ?? this.pendingVisits,
       customerName: customerName ?? this.customerName,
     );
   }

@@ -65,7 +65,7 @@ class InfoCard extends StatelessWidget {
                         const SizedBox(width: 12),
                         Text(
                           title,
-                          // Removed overflow and maxLines to allow wrapping
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 14,
                             color: Colors.grey,
@@ -84,7 +84,7 @@ class InfoCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   value,
-                  // Removed overflow and maxLines to allow wrapping
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,

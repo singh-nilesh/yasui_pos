@@ -1,0 +1,124 @@
+
+-- Customers Table
+CREATE TABLE customers (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  city TEXT,
+  state TEXT,
+  country TEXT,
+  email TEXT,
+  contact_prn_1 TEXT,
+  contact_prn_2 TEXT,
+  address TEXT,
+  tel_no TEXT,
+  fax TEXT,
+  geo_coord TEXT
+);
+
+-- Stock Master Table
+CREATE TABLE stock_master (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  part_code TEXT UNIQUE NOT NULL,
+  type TEXT CHECK(type IN ('machine', 'part')) NOT NULL,
+  price_usd REAL,
+  price_jpy REAL,
+  price_inr REAL,
+  stock_count INTEGER DEFAULT 0
+);
+
+-- Machines Table
+CREATE TABLE machines (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  customer_id INTEGER REFERENCES customers(id),
+  serial_no TEXT UNIQUE,
+  purchase_date DATE,
+  price_usd REAL,
+  price_jpy REAL,
+  price_inr REAL,
+  seller TEXT,
+  amc_start_month DATE,
+  amc_expire_month DATE,
+  total_visits INTEGER DEFAULT 0,
+  pending_visits INTEGER DEFAULT 0
+);
+
+-- Spare Parts Table
+CREATE TABLE spare_parts (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  customer_id INTEGER REFERENCES customers(id),
+  quantity INTEGER NOT NULL,
+  purchase_date DATE,
+  price_usd REAL,
+  price_jpy REAL,
+  price_inr REAL,
+  invoice TEXT,
+  seller TEXT
+);
+
+-- AMC Schedule Table
+CREATE TABLE amc_schedule (
+  id INTEGER PRIMARY KEY,
+  machine_id INTEGER REFERENCES machines(id),
+  due_date DATE,
+  maintenance_type TEXT,
+  status TEXT CHECK(status IN ('pending', 'completed')) DEFAULT 'pending',
+  issue TEXT,
+  fix TEXT,
+  cost REAL
+);
+
+-- Imports Table
+CREATE TABLE imports (
+  id INTEGER PRIMARY KEY,
+  part_code TEXT NOT NULL REFERENCES stock_master(part_code),
+  name TEXT NOT NULL,
+  type TEXT CHECK(type IN ('machine', 'part')) NOT NULL,
+  customer_id INTEGER REFERENCES customers(id),
+  quantity INTEGER NOT NULL,
+  import_date DATE,
+  price_usd REAL,
+  price_jpy REAL,
+  price_inr REAL,
+  serial_no TEXT,
+  invoice TEXT,
+  status TEXT CHECK(status IN ('pending', 'delivered')) NOT NULL
+);
+
+-- Triggers
+
+-- Trigger: Update stock on imports delivered to YFE customer
+CREATE TRIGGER update_stock_on_import
+AFTER UPDATE ON imports
+FOR EACH ROW
+WHEN NEW.status = 'delivered' AND 
+     (SELECT name FROM customers WHERE id = NEW.customer_id) LIKE '%YFE%'
+BEGIN
+  UPDATE stock_master
+  SET stock_count = stock_count + NEW.quantity
+  WHERE part_code = NEW.part_code;
+END;
+
+-- Trigger: Reduce stock on machine insert if seller is YFE
+CREATE TRIGGER reduce_stock_on_machine_insert
+AFTER INSERT ON machines
+FOR EACH ROW
+WHEN NEW.seller = 'YFE'
+BEGIN
+  UPDATE stock_master
+  SET stock_count = stock_count - 1
+  WHERE part_code = (SELECT part_code FROM stock_master WHERE name = NEW.name AND type = 'machine');
+END;
+
+-- Trigger: Reduce stock on spare parts insert if seller is YFE
+CREATE TRIGGER reduce_stock_on_spare_insert
+AFTER INSERT ON spare_parts
+FOR EACH ROW
+WHEN NEW.seller = 'YFE'
+BEGIN
+  UPDATE stock_master
+  SET stock_count = stock_count - NEW.quantity
+  WHERE part_code = (SELECT part_code FROM stock_master WHERE name = NEW.name AND type = 'part');
+END;

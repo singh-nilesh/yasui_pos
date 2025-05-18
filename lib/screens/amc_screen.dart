@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import '../widgets/data_table_widget.dart';
+import '../models/amc_schedule.dart'; // Ensure AMCSchedule is imported
+import '../models/customer.dart';
+import '../models/machine.dart';
+import '../services/database_service.dart';
+import 'package:intl/intl.dart';
 
 class AMCScreen extends StatefulWidget {
   const AMCScreen({super.key});
@@ -9,1494 +13,978 @@ class AMCScreen extends StatefulWidget {
 }
 
 class _AMCScreenState extends State<AMCScreen> {
-  // Selected date for calendar view
-  DateTime _selectedDate = DateTime.now();
+  final DatabaseService _databaseService = DatabaseService();
+  bool _isLoading = true;
   
-  // Selected view (calendar or table)
-  String _selectedView = 'Calendar';
-  
-  // Filter for table view
+  // AMC data
+  List<Machine> _machines = [];
+  List<Customer> _customers = [];
+  String _searchQuery = '';
   String _selectedFilter = 'All';
   
   @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header and actions
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'AMC Management',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Row(
-                  children: [
-                    // View Toggle
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment<String>(
-                          value: 'Calendar',
-                          label: Text('Calendar View'),
-                          icon: Icon(Icons.calendar_month),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'Table',
-                          label: Text('Table View'),
-                          icon: Icon(Icons.view_list),
-                        ),
-                      ],
-                      selected: {_selectedView},
-                      onSelectionChanged: (Set<String> newSelection) {
-                        setState(() {
-                          _selectedView = newSelection.first;
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 16),
-                    // Quick action buttons
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _showNewAMCDialog();
-                      },
-                      icon: const Icon(Icons.add),
-                      label: const Text('New AMC Contract'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1A237E),
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _showEmergencyVisitDialog();
-                      },
-                      icon: const Icon(Icons.emergency),
-                      label: const Text('Emergency Visit'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            
-            // Main content based on selected view
-            Expanded(
-              child: _selectedView == 'Calendar' 
-                  ? _buildCalendarView() 
-                  : _buildTableView(),
-            ),
-          ],
-        ),
-      ),
-    );
+  void initState() {
+    super.initState();
+    _loadData();
   }
   
-  // Calendar View
-  Widget _buildCalendarView() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Calendar
-        Expanded(
-          flex: 3,
-          child: Card(
-            elevation: 1,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Month Navigation
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: () {
-                          setState(() {
-                            _selectedDate = DateTime(
-                              _selectedDate.year,
-                              _selectedDate.month - 1,
-                              _selectedDate.day,
-                            );
-                          });
-                        },
-                        tooltip: 'Previous Month',
-                      ),
-                      Text(
-                        '${_getMonthName(_selectedDate.month)} ${_selectedDate.year}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.arrow_forward),
-                        onPressed: () {
-                          setState(() {
-                            _selectedDate = DateTime(
-                              _selectedDate.year,
-                              _selectedDate.month + 1,
-                              _selectedDate.day,
-                            );
-                          });
-                        },
-                        tooltip: 'Next Month',
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 0),
-                
-                // Calendar Grid
-                Expanded(
-                  child: GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 7,
-                      childAspectRatio: 1.5,
-                    ),
-                    itemCount: 7 + _getDaysInMonth(_selectedDate.year, _selectedDate.month),
-                    itemBuilder: (context, index) {
-                      // First row is weekdays
-                      if (index < 7) {
-                        return _buildWeekdayCell(index);
-                      }
-                      
-                      // Calendar days
-                      final dayNumber = index - 6; // Adjusted for weekday row
-                      final date = DateTime(_selectedDate.year, _selectedDate.month, dayNumber);
-                      
-                      // Check if this date has AMC visits
-                      final visitsCount = _getAMCVisitsForDate(date);
-                      
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _selectedDate = date;
-                          });
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: _selectedDate.day == dayNumber
-                                ? Colors.blue[50]
-                                : DateTime.now().year == date.year &&
-                                  DateTime.now().month == date.month &&
-                                  DateTime.now().day == date.day
-                                    ? Colors.amber[50]
-                                    : null,
-                            border: Border.all(
-                              color: _selectedDate.day == dayNumber
-                                  ? Colors.blue
-                                  : Colors.grey[300]!,
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Stack(
-                            children: [
-                              Align(
-                                alignment: Alignment.topRight,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(4.0),
-                                  child: Text(
-                                    dayNumber.toString(),
-                                    style: TextStyle(
-                                      fontWeight: _selectedDate.day == dayNumber
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (visitsCount > 0)
-                                Align(
-                                  alignment: Alignment.center,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: _getVisitStatusColor(visitsCount),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text(
-                                      visitsCount.toString(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        // Selected Day Details
-        Expanded(
-          flex: 2,
-          child: Card(
-            elevation: 1,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  color: Colors.blue[50],
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.event,
-                        color: Colors.blue[700],
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Visits for ${_selectedDate.day} ${_getMonthName(_selectedDate.month)} ${_selectedDate.year}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: _buildVisitsForSelectedDate(),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      // Load all machines
+      final allMachines = await _databaseService.getMachines();
+      // Only keep machines with AMC (amcExpireMonth is not null)
+      _machines = allMachines.where((m) => m.amcExpireMonth != null).toList();
+      // Load customers for reference
+      _customers = await _databaseService.getCustomers();
+      
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading AMC data: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
   
-  // Table View
-  Widget _buildTableView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Filter by status
-        Row(
-          children: [
-            const Text(
-              'Filter by Status:',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(width: 16),
-            ChoiceChip(
-              label: const Text('All'),
-              selected: _selectedFilter == 'All',
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() {
-                    _selectedFilter = 'All';
-                  });
-                }
-              },
-            ),
-            const SizedBox(width: 8),
-            ChoiceChip(
-              label: const Text('Active'),
-              selected: _selectedFilter == 'Active',
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() {
-                    _selectedFilter = 'Active';
-                  });
-                }
-              },
-            ),
-            const SizedBox(width: 8),
-            ChoiceChip(
-              label: const Text('Expired'),
-              selected: _selectedFilter == 'Expired',
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() {
-                    _selectedFilter = 'Expired';
-                  });
-                }
-              },
-            ),
-            const SizedBox(width: 8),
-            ChoiceChip(
-              label: const Text('Expiring Soon'),
-              selected: _selectedFilter == 'Expiring Soon',
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() {
-                    _selectedFilter = 'Expiring Soon';
-                  });
-                }
-              },
-            ),
-            const Spacer(),
-            // Search box
-            Expanded(
-              child: TextFormField(
-                decoration: InputDecoration(
-                  hintText: 'Search contracts',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                ),
-                onChanged: (value) {
-                  // Implement search functionality
-                },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
+  // Filter machines based on search and status filter
+  List<Machine> get _filteredMachines {
+    List<Machine> result = _machines;
+    
+    // Apply status filter
+    if (_selectedFilter == 'Active') {
+      result = result.where((machine) => 
+        machine.amcExpireMonth != null && 
+        machine.amcExpireMonth!.isAfter(DateTime.now())
+      ).toList();
+    } else if (_selectedFilter == 'Expired') {
+      result = result.where((machine) => 
+        machine.amcExpireMonth != null && 
+        machine.amcExpireMonth!.isBefore(DateTime.now())
+      ).toList();
+    }
+    
+    // Apply search filter if there's a query
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      result = result.where((machine) {
+        // Get customer name
+        final customer = _customers.firstWhere(
+          (c) => c.id == machine.customerId,
+          orElse: () => Customer(
+            name: 'Unknown',
+            city: '',
+            country: '',
+            telNo: '',
+          ),
+        );
         
-        // AMC Contracts Table
-        Expanded(
-          child: DataTableWidget(
-            columns: const [
-              'Contract ID',
-              'Customer',
-              'Machine',
-              'Start Date',
-              'End Date',
-              'Status',
-              'Last Visit',
-              'Next Visit',
-              'Actions',
-            ],
-            rows: _getFilteredAMCContracts(),
-            onEdit: (row) {
-              // Edit AMC contract
-              _showEditAMCDialog(row);
-            },
-            onDelete: null, // No delete option for AMC
-          ),
-        ),
-      ],
-    );
+        return machine.name.toLowerCase().contains(query) ||
+               (machine.serialNo?.toLowerCase().contains(query) ?? false) ||
+               customer.name.toLowerCase().contains(query) ||
+               (customer.country?.toLowerCase().contains(query) ?? false);
+      }).toList();
+    }
+    
+    return result;
   }
   
-  // Helper method to build weekday header cells
-  Widget _buildWeekdayCell(int index) {
-    final weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return Container(
-      alignment: Alignment.center,
-      margin: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        weekdays[index],
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-  
-  // Helper method to get AMC visits for a specific date
-  int _getAMCVisitsForDate(DateTime date) {
-    // Format the date for comparison in MM/DD/YYYY format
-    final dateString = '${date.month}/${date.day}/${date.year}';
-    
-    // Count visits scheduled for this date
-    return _dummyAMCVisits
-        .where((visit) => visit['date'] == dateString)
-        .length;
-  }
-  
-  // Helper method to build visits list for selected date
-  Widget _buildVisitsForSelectedDate() {
-    // Format the date for comparison in MM/DD/YYYY format
-    final dateString = '${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}';
-    
-    // Filter visits for the selected date
-    final visits = _dummyAMCVisits
-        .where((visit) => visit['date'] == dateString)
-        .toList();
-    
-    if (visits.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.event_busy,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'No AMC visits scheduled for this date',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                _showScheduleVisitDialog();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A237E),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Schedule Visit'),
-            ),
-          ],
-        ),
+  // Get customer by ID
+  Customer _getCustomer(int? customerId) {
+    if (customerId == null) {
+      return Customer(
+        name: 'Unknown',
       );
     }
     
-    return ListView.builder(
-      itemCount: visits.length,
-      padding: const EdgeInsets.all(16),
-      itemBuilder: (context, index) {
-        final visit = visits[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            title: Text(
-              visit['customer'],
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                Text('Machine: ${visit['machine']}'),
-                Text('Time: ${visit['time']}'),
-                Text('Engineer: ${visit['engineer']}'),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _getStatusChip(visit['status']),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  onPressed: () {
-                    _showVisitActionMenu(context, visit);
-                  },
-                ),
-              ],
-            ),
-            isThreeLine: true,
-          ),
-        );
-      },
+    return _customers.firstWhere(
+      (customer) => customer.id == customerId,
+      orElse: () => Customer(
+        name: 'Unknown',
+      ),
     );
   }
+
+  // Get completed visits count
+  int _getVisitsCompleted(Machine machine) {
+    return machine.totalVisits - machine.pendingVisits;
+  }
+
+  // Get total visits count
+  int _getTotalVisits(Machine machine) {
+    return machine.totalVisits;
+  }
   
-  // Helper method to display a visit status chip
-  Widget _getStatusChip(String status) {
-    Color chipColor;
-    Icon? chipIcon;
-    
-    switch (status) {
-      case 'Scheduled':
-        chipColor = Colors.blue;
-        chipIcon = const Icon(Icons.event, color: Colors.white, size: 16);
-        break;
-      case 'Completed':
-        chipColor = Colors.green;
-        chipIcon = const Icon(Icons.check_circle, color: Colors.white, size: 16);
-        break;
-      case 'Cancelled':
-        chipColor = Colors.red;
-        chipIcon = const Icon(Icons.cancel, color: Colors.white, size: 16);
-        break;
-      case 'In Progress':
-        chipColor = Colors.orange;
-        chipIcon = const Icon(Icons.timelapse, color: Colors.white, size: 16);
-        break;
-      default:
-        chipColor = Colors.grey;
-        chipIcon = null;
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
     }
     
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: chipColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (chipIcon != null) ...[
-            chipIcon,
-            const SizedBox(width: 4),
-          ],
-          Text(
-            status,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
+          // Header with title and refresh button
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Annual Maintenance Contracts',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _loadData,
+                tooltip: 'Refresh',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // Filters and search
+          Row(
+            children: [
+              // Status filter
+              Expanded(
+                flex: 1,
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment<String>(
+                      value: 'All',
+                      label: Text('All'),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'Active',
+                      label: Text('Active'),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'Expired',
+                      label: Text('Expired'),
+                    ),
+                  ],
+                  selected: {_selectedFilter},
+                  onSelectionChanged: (Set<String> selection) {
+                    setState(() {
+                      _selectedFilter = selection.first;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              
+              // Search
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  decoration: InputDecoration(
+                    hintText: 'Search by machine name, serial number, or customer',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // AMC data
+          Expanded(
+            child: _filteredMachines.isEmpty 
+              ? _buildEmptyView()
+              : _buildAmcTable(),
           ),
         ],
       ),
     );
   }
   
-  // Helper method to show visit action menu
-  void _showVisitActionMenu(BuildContext context, Map<String, dynamic> visit) {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Edit Visit'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showEditVisitDialog(visit);
-                },
+  Widget _buildEmptyView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.assignment_late,
+            size: 80,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _searchQuery.isNotEmpty || _selectedFilter != 'All'
+              ? 'No AMCs match your filters'
+              : 'No AMCs found in the system',
+            style: const TextStyle(
+              fontSize: 18,
+              color: Colors.grey,
+            ),
+          ),
+          if (_searchQuery.isNotEmpty || _selectedFilter != 'All') ...[
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _searchQuery = '';
+                  _selectedFilter = 'All';
+                });
+              },
+              icon: const Icon(Icons.clear),
+              label: const Text('Clear Filters'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A237E),
+                foregroundColor: Colors.white,
               ),
-              if (visit['status'] == 'Scheduled') ...[
-                ListTile(
-                  leading: const Icon(Icons.check_circle),
-                  title: const Text('Mark as Completed'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    // Mark as completed logic
-                  },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildAmcTable() {
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Table header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'AMCs (${_filteredMachines.length})',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.cancel),
-                  title: const Text('Cancel Visit'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    // Cancel visit logic
-                  },
+                Text(
+                  'Filter: $_selectedFilter',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                  ),
                 ),
               ],
-              ListTile(
-                leading: const Icon(Icons.content_paste),
-                title: const Text('View Report'),
-                onTap: () {
-                  Navigator.pop(context);
-                  // View report logic
-                },
+            ),
+            const SizedBox(height: 16),
+            
+            // Table
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(label: Text('Machine')),
+                      DataColumn(label: Text('Serial Number')),
+                      DataColumn(label: Text('Customer')),
+                      DataColumn(label: Text('Location')),
+                      DataColumn(label: Text('AMC Status')),
+                      DataColumn(label: Text('Expiry Date')),
+                      DataColumn(label: Text('Visits')),
+                      DataColumn(label: Text('Actions')),
+                    ],
+                    rows: _filteredMachines.map((machine) {
+                      final customer = _getCustomer(machine.customerId);
+                      
+                      // Determine AMC status
+                      final bool isAmcActive = machine.amcExpireMonth != null && 
+                          machine.amcExpireMonth!.isAfter(DateTime.now());
+                      
+                      // Format expiry date
+                      final String expiryDate = machine.amcExpireMonth != null
+                          ? DateFormat('dd MMM yyyy').format(machine.amcExpireMonth!)
+                          : 'N/A';
+                          
+                      // Calculate days remaining or days expired
+                      final int daysRemaining = machine.amcExpireMonth != null
+                          ? machine.amcExpireMonth!.difference(DateTime.now()).inDays
+                          : 0;
+                          
+                      // Format visits
+                      final visitsCompleted = _getVisitsCompleted(machine);
+                      final totalVisits = _getTotalVisits(machine);
+                      final String visits = '$visitsCompleted/$totalVisits';
+                      
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(machine.name)),
+                          DataCell(Text(machine.serialNo ?? 'N/A')),
+                          DataCell(Text(customer.name)),
+                          DataCell(Text(customer.country ?? 'N/A')),
+                          DataCell(
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isAmcActive
+                                    ? Colors.green[100]
+                                    : Colors.red[100],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                isAmcActive ? 'Active' : 'Expired',
+                                style: TextStyle(
+                                  color: isAmcActive
+                                      ? Colors.green[800]
+                                      : Colors.red[800],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(expiryDate),
+                                Text(
+                                  isAmcActive
+                                      ? '$daysRemaining days remaining'
+                                      : '${-daysRemaining} days expired',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isAmcActive
+                                        ? Colors.green[800]
+                                        : Colors.red[800],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          DataCell(
+                            Row(
+                              children: [
+                                if (totalVisits > 0) ...[
+                                  SizedBox(
+                                    width: 50,
+                                    child: LinearProgressIndicator(
+                                      value: totalVisits > 0
+                                          ? visitsCompleted / totalVisits
+                                          : 0,
+                                      backgroundColor: Colors.grey[200],
+                                      color: const Color(0xFF1A237E),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                Text(visits),
+                              ],
+                            ),
+                          ),
+                          DataCell(
+                            Row(
+                              children: [
+                                if (isAmcActive)
+                                  IconButton(
+                                    icon: const Icon(Icons.add_task, color: Colors.blue),
+                                    onPressed: () {
+                                      _showAddVisitDialog(machine);
+                                    },
+                                    tooltip: 'Add Visit',
+                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.preview, color: Colors.green),
+                                  onPressed: () {
+                                    _showAmcDetailsDialog(machine, customer);
+                                  },
+                                  tooltip: 'View Details',
+                                ),
+                                if (!isAmcActive)
+                                  IconButton(
+                                    icon: const Icon(Icons.refresh, color: Colors.orange),
+                                    onPressed: () {
+                                      _showRenewAmcDialog(machine);
+                                    },
+                                    tooltip: 'Renew AMC',
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
               ),
-              ListTile(
-                leading: const Icon(Icons.phone),
-                title: const Text('Contact Customer'),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Contact customer logic
-                },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  void _showAddVisitDialog(Machine machine) {
+    final TextEditingController dateController = TextEditingController(
+        text: DateFormat('yyyy-MM-dd').format(DateTime.now()));
+    final TextEditingController issueController = TextEditingController();
+    final TextEditingController fixController = TextEditingController();
+    final TextEditingController costController = TextEditingController();
+    final String maintenanceType = 'Regular Maintenance';
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Add Service Visit for ${machine.name}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Visit information
+                TextFormField(
+                  controller: dateController,
+                  decoration: InputDecoration(
+                    labelText: 'Visit Date',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.calendar_today),
+                      onPressed: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                          lastDate: DateTime.now().add(const Duration(days: 7)),
+                        );
+                        if (picked != null) {
+                          dateController.text = DateFormat('yyyy-MM-dd').format(picked);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                // Issue 
+                TextFormField(
+                  controller: issueController,
+                  decoration: const InputDecoration(
+                    labelText: 'Issue Description',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                // Fix
+                TextFormField(
+                  controller: fixController,
+                  decoration: const InputDecoration(
+                    labelText: 'Fix Applied',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 16),
+                
+                // Cost
+                TextFormField(
+                  controller: costController,
+                  decoration: const InputDecoration(
+                    labelText: 'Cost (if any)',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 16),
+                
+                // Current status
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info,
+                        color: Colors.blue[800],
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Completed Visits: ${machine.totalVisits - machine.pendingVisits}/${machine.totalVisits}',
+                          style: TextStyle(
+                            color: Colors.blue[800],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                // Create AMC schedule
+                final visitDate = DateTime.tryParse(dateController.text) ?? DateTime.now();
+                final cost = double.tryParse(costController.text) ?? 0.0;
+                
+                // Create AMC schedule entry
+                final amcSchedule = AMCSchedule(
+                  machineId: machine.id!,
+                  dueDate: visitDate,
+                  maintenanceType: maintenanceType,
+                  status: 'completed',
+                  issue: issueController.text,
+                  fix: fixController.text,
+                  cost: cost,
+                  machineName: machine.name,
+                  customerName: machine.customerName,
+                );
+                
+                // Update machine visit counter
+                final updatedMachine = machine.copyWith(
+                  totalVisits: machine.totalVisits,
+                  pendingVisits: machine.pendingVisits > 0 ? machine.pendingVisits - 1 : 0,
+                );
+                
+                // Save to database
+                await _databaseService.insertAMCSchedule(amcSchedule);
+                await _databaseService.updateMachine(updatedMachine);
+                
+                _loadData(); // Refresh data
+                Navigator.pop(context);
+                
+                // Show confirmation
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Service visit added successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A237E),
+                foregroundColor: Colors.white,
               ),
-            ],
+              child: const Text('Add Visit'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  void _showAmcDetailsDialog(Machine machine, Customer customer) async {
+    // Load all AMC schedules for this machine
+    final List<AMCSchedule> schedules = await _databaseService.getAMCSchedulesByMachine(machine.id!);
+    
+    // Determine AMC status
+    final bool isAmcActive = machine.amcExpireMonth != null && 
+        machine.amcExpireMonth!.isAfter(DateTime.now());
+    
+    // Calculate days remaining or days expired
+    final int daysRemaining = machine.amcExpireMonth != null
+        ? machine.amcExpireMonth!.difference(DateTime.now()).inDays
+        : 0;
+        
+    final String daysText = isAmcActive
+        ? '$daysRemaining days remaining'
+        : '${-daysRemaining} days expired';
+        
+    // Get completed and pending visits count
+    final completedVisits = schedules.where((s) => s.status == 'completed').length;
+    final totalVisits = machine.totalVisits;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header with machine and customer info
+                Row(
+                  children: [
+                    // Machine icon
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A237E),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.settings,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    
+                    // Machine and customer details
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            machine.name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'S/N: ${machine.serialNo ?? "N/A"}',
+                            style: TextStyle(
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Customer: ${customer.name}',
+                            style: TextStyle(
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          Text(
+                            'Location: ${customer.country ?? "N/A"}',
+                            style: TextStyle(
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                
+                // AMC Status card
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isAmcActive ? Colors.green[50] : Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isAmcActive ? Icons.check_circle : Icons.error,
+                        color: isAmcActive ? Colors.green : Colors.red,
+                        size: 32,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isAmcActive ? 'Active' : 'Expired',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                                color: isAmcActive ? Colors.green : Colors.red,
+                              ),
+                            ),
+                            if (machine.amcExpireMonth != null)
+                              Text(
+                                'Expires on ${DateFormat('dd MMM yyyy').format(machine.amcExpireMonth!)}',
+                              ),
+                            Text(daysText),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                // Visit Progress
+                Text(
+                  'Service Visits: $completedVisits/$totalVisits',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: totalVisits > 0 ? completedVisits / totalVisits : 0,
+                  backgroundColor: Colors.grey[200],
+                  color: const Color(0xFF1A237E),
+                ),
+                const SizedBox(height: 16),
+                
+                // Visit History
+                const Text(
+                  'Visit History',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                
+                // Visit list
+                SizedBox(
+                  height: 200,
+                  child: schedules.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No service visits recorded',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: schedules.length,
+                          itemBuilder: (context, index) {
+                            final schedule = schedules[index];
+                            return ListTile(
+                              leading: const Icon(Icons.engineering),
+                              title: Text(
+                                'Visit on ${schedule.dueDate != null ? DateFormat('dd MMM yyyy').format(schedule.dueDate!) : "N/A"}',
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Status: ${schedule.status}'),
+                                  if (schedule.issue != null && schedule.issue!.isNotEmpty)
+                                    Text('Issue: ${schedule.issue}'),
+                                  if (schedule.fix != null && schedule.fix!.isNotEmpty)
+                                    Text('Fix: ${schedule.fix}'),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                
+                // Action buttons
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Close'),
+                    ),
+                    if (isAmcActive)
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _showAddVisitDialog(machine);
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Visit'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A237E),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    if (!isAmcActive)
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _showRenewAmcDialog(machine);
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Renew AMC'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
   
-  // Helper method to get filtered AMC contracts based on selected filter
-  List<Map<String, dynamic>> _getFilteredAMCContracts() {
-    switch (_selectedFilter) {
-      case 'Active':
-        return _dummyAMCContracts
-            .where((contract) => contract['Status'] == 'Active')
-            .toList();
-      case 'Expired':
-        return _dummyAMCContracts
-            .where((contract) => contract['Status'] == 'Expired')
-            .toList();
-      case 'Expiring Soon':
-        return _dummyAMCContracts
-            .where((contract) => contract['Status'] == 'Expiring Soon')
-            .toList();
-      default:
-        return [..._dummyAMCContracts];
-    }
-  }
-  
-  // Helper method to get the color for visit count indicator on calendar
-  Color _getVisitStatusColor(int count) {
-    if (count >= 3) {
-      return Colors.red;
-    } else if (count == 2) {
-      return Colors.orange;
-    } else {
-      return Colors.blue;
-    }
-  }
-  
-  // Helper method to get month name from month number
-  String _getMonthName(int month) {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return months[month - 1];
-  }
-  
-  // Helper method to get days in a month
-  int _getDaysInMonth(int year, int month) {
-    return DateTime(year, month + 1, 0).day;
-  }
-  
-  // Dialog to create new AMC contract
-  void _showNewAMCDialog() {
+  void _showRenewAmcDialog(Machine machine) {
+    final TextEditingController startDateController = TextEditingController(
+        text: DateFormat('yyyy-MM-dd').format(DateTime.now()));
+    final TextEditingController durationController = TextEditingController(text: '12');
+    int visits = 4;
+    
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('New AMC Contract'),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 500,
-              child: Column(
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Renew AMC for ${machine.name}'),
+              content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Customer dropdown
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Customer',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _dummyCustomerNames
-                        .map((name) => DropdownMenuItem<String>(
-                              value: name,
-                              child: Text(name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Machine dropdown
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Machine',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _dummyMachineNames
-                        .map((name) => DropdownMenuItem<String>(
-                              value: name,
-                              child: Text(name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Contract period
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          decoration: InputDecoration(
-                            labelText: 'Start Date',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.calendar_today),
-                              onPressed: () {
-                                // Show date picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          decoration: InputDecoration(
-                            labelText: 'End Date',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.calendar_today),
-                              onPressed: () {
-                                // Show date picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Contract value
+                  // Start date
                   TextFormField(
+                    controller: startDateController,
+                    decoration: InputDecoration(
+                      labelText: 'Start Date',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.calendar_today),
+                        onPressed: () async {
+                          final DateTime? picked = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              startDateController.text = DateFormat('yyyy-MM-dd').format(picked);
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Duration
+                  TextFormField(
+                    controller: durationController,
                     decoration: const InputDecoration(
-                      labelText: 'Contract Value (₹)',
+                      labelText: 'Duration (months)',
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 16),
                   
-                  // Visit frequency
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Visit Frequency',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: '3',
-                        child: Text('Quarterly (4 visits/year)'),
-                      ),
-                      DropdownMenuItem(
-                        value: '6',
-                        child: Text('Bi-annually (2 visits/year)'),
-                      ),
-                      DropdownMenuItem(
-                        value: '12',
-                        child: Text('Annually (1 visit/year)'),
-                      ),
-                    ],
-                    onChanged: (value) {},
+                  // Visits
+                  const Text('Number of Visits:'),
+                  Slider(
+                    value: visits.toDouble(),
+                    min: 1,
+                    max: 12,
+                    divisions: 11,
+                    label: visits.toString(),
+                    activeColor: const Color(0xFF1A237E),
+                    onChanged: (value) {
+                      setState(() {
+                        visits = value.round();
+                      });
+                    },
                   ),
-                  const SizedBox(height: 16),
-                  
-                  // Notes
-                  TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'Notes',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
+                  Text(
+                    '$visits visit${visits > 1 ? 's' : ''} per contract',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                // Create AMC logic
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A237E),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Create Contract'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  
-  // Dialog to edit AMC contract
-  void _showEditAMCDialog(Map<String, dynamic> contract) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Edit AMC Contract ${contract['Contract ID']}'),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 500,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Customer dropdown
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Customer',
-                      border: OutlineInputBorder(),
-                    ),
-                    value: contract['Customer'],
-                    items: _dummyCustomerNames
-                        .map((name) => DropdownMenuItem<String>(
-                              value: name,
-                              child: Text(name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Machine dropdown
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Machine',
-                      border: OutlineInputBorder(),
-                    ),
-                    value: contract['Machine'],
-                    items: _dummyMachineNames
-                        .map((name) => DropdownMenuItem<String>(
-                              value: name,
-                              child: Text(name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Contract period
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          initialValue: contract['Start Date'],
-                          decoration: InputDecoration(
-                            labelText: 'Start Date',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.calendar_today),
-                              onPressed: () {
-                                // Show date picker
-                              },
-                            ),
-                          ),
-                        ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    // Parse values
+                    final startDate = DateTime.tryParse(startDateController.text) ?? DateTime.now();
+                    final duration = int.tryParse(durationController.text) ?? 12;
+                    
+                    // Calculate expiry date
+                    final expiryDate = DateTime(
+                      startDate.year,
+                      startDate.month + duration,
+                      startDate.day,
+                    );
+                    
+                    // Update the machine with AMC details
+                    final updatedMachine = machine.copyWith(
+                      amcStartMonth: startDate,
+                      amcExpireMonth: expiryDate,
+                      totalVisits: visits,
+                      pendingVisits: visits,
+                    );
+                    
+                    await _databaseService.updateMachine(updatedMachine);
+                    
+                    // Create AMC Schedule entries for the new visits
+                    for (int i = 0; i < visits; i++) {
+                      final dueDate = DateTime(
+                        startDate.year,
+                        startDate.month + ((i * duration) ~/ visits),
+                        startDate.day,
+                      );
+                      
+                      final amcSchedule = AMCSchedule(
+                        machineId: machine.id!,
+                        dueDate: dueDate,
+                        maintenanceType: 'Quarterly Maintenance',
+                        status: 'pending',
+                        machineName: machine.name,
+                        customerName: machine.customerName,
+                      );
+                      
+                      await _databaseService.insertAMCSchedule(amcSchedule);
+                    }
+                    
+                    _loadData(); // Reload data
+                    Navigator.pop(context);
+                    
+                    // Show confirmation
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('AMC renewed successfully'),
+                        backgroundColor: Colors.green,
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          initialValue: contract['End Date'],
-                          decoration: InputDecoration(
-                            labelText: 'End Date',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.calendar_today),
-                              onPressed: () {
-                                // Show date picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A237E),
+                    foregroundColor: Colors.white,
                   ),
-                  const SizedBox(height: 16),
-                  
-                  // Notes
-                  TextFormField(
-                    initialValue: contract['Notes'] ?? '',
-                    decoration: const InputDecoration(
-                      labelText: 'Notes',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                // Update AMC logic
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A237E),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Update Contract'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  
-  // Dialog to edit a visit
-  void _showEditVisitDialog(Map<String, dynamic> visit) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Edit Visit'),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 500,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Date and Time
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          initialValue: visit['date'],
-                          decoration: InputDecoration(
-                            labelText: 'Date',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.calendar_today),
-                              onPressed: () {
-                                // Show date picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          initialValue: visit['time'],
-                          decoration: InputDecoration(
-                            labelText: 'Time',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.access_time),
-                              onPressed: () {
-                                // Show time picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Engineer assigned
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Engineer',
-                      border: OutlineInputBorder(),
-                    ),
-                    value: visit['engineer'],
-                    items: _dummyEngineers
-                        .map((name) => DropdownMenuItem(
-                              value: name,
-                              child: Text(name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Status
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Status',
-                      border: OutlineInputBorder(),
-                    ),
-                    value: visit['status'],
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Scheduled',
-                        child: Text('Scheduled'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'In Progress',
-                        child: Text('In Progress'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Completed',
-                        child: Text('Completed'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Cancelled',
-                        child: Text('Cancelled'),
-                      ),
-                    ],
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Notes
-                  TextFormField(
-                    initialValue: visit['notes'] ?? '',
-                    decoration: const InputDecoration(
-                      labelText: 'Notes',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                // Update visit logic
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A237E),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Update Visit'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  
-  // Dialog to schedule a new visit
-  void _showScheduleVisitDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Schedule Visit'),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 500,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // AMC Contract dropdown
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'AMC Contract',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _dummyAMCContracts
-                        .where((contract) => contract['Status'] == 'Active')
-                        .map((contract) => DropdownMenuItem<String>(
-                              value: contract['Contract ID'],
-                              child: Text(
-                                '${contract['Contract ID']} - ${contract['Customer']} (${contract['Machine']})',
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Date and Time
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          initialValue:
-                              '${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
-                          decoration: InputDecoration(
-                            labelText: 'Date',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.calendar_today),
-                              onPressed: () {
-                                // Show date picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          decoration: InputDecoration(
-                            labelText: 'Time',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.access_time),
-                              onPressed: () {
-                                // Show time picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Engineer assigned
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Engineer',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _dummyEngineers
-                        .map((name) => DropdownMenuItem(
-                              value: name,
-                              child: Text(name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Notes
-                  TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'Notes',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                // Schedule visit logic
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A237E),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Schedule Visit'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  
-  // Dialog for emergency visit
-  void _showEmergencyVisitDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.warning, color: Colors.red),
-              const SizedBox(width: 8),
-              const Text('Schedule Emergency Visit'),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 500,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Customer dropdown
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Customer',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _dummyCustomerNames
-                        .map((name) => DropdownMenuItem<String>(
-                              value: name,
-                              child: Text(name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Machine dropdown
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Machine',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _dummyMachineNames
-                        .map((name) => DropdownMenuItem<String>(
-                              value: name,
-                              child: Text(name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Issue description
-                  TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'Issue Description',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Priority level
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Priority Level',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'High',
-                        child: Text('High - Same Day'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Medium',
-                        child: Text('Medium - Within 48 hours'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Low',
-                        child: Text('Low - Within a week'),
-                      ),
-                    ],
-                    onChanged: (value) {},
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Date and Time
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          decoration: InputDecoration(
-                            labelText: 'Preferred Date',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.calendar_today),
-                              onPressed: () {
-                                // Show date picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          decoration: InputDecoration(
-                            labelText: 'Preferred Time',
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.access_time),
-                              onPressed: () {
-                                // Show time picker
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                // Schedule emergency visit logic
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Schedule Emergency Visit'),
-            ),
-          ],
+                  child: const Text('Renew AMC'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
   }
 }
-
-// Dummy Data for AMC Screen
-final List<Map<String, dynamic>> _dummyAMCContracts = [
-  {
-    'Contract ID': 'AMC001',
-    'Customer': 'Royal Jewellers',
-    'Machine': 'Casting Machine X1',
-    'Start Date': '15 May 2024',
-    'End Date': '14 May 2025',
-    'Status': 'Active',
-    'Last Visit': '15 Mar 2025',
-    'Next Visit': '15 Jul 2025',
-    'Notes': 'Quarterly maintenance contract',
-  },
-  {
-    'Contract ID': 'AMC002',
-    'Customer': 'Royal Jewellers',
-    'Machine': 'Polisher P200',
-    'Start Date': '20 Jul 2024',
-    'End Date': '19 Jul 2025',
-    'Status': 'Active',
-    'Last Visit': '20 Mar 2025',
-    'Next Visit': '20 May 2025',
-    'Notes': 'Bi-monthly maintenance contract',
-  },
-  {
-    'Contract ID': 'AMC003',
-    'Customer': 'Star Jewellery',
-    'Machine': 'Wax Injector W50',
-    'Start Date': '05 Jan 2024',
-    'End Date': '04 Jan 2025',
-    'Status': 'Expired',
-    'Last Visit': '05 Oct 2024',
-    'Next Visit': 'N/A',
-    'Notes': 'Contract renewal pending',
-  },
-  {
-    'Contract ID': 'AMC004',
-    'Customer': 'Elegant Designs',
-    'Machine': 'Laser Welder LW-20',
-    'Start Date': '12 Mar 2025',
-    'End Date': '11 Mar 2026',
-    'Status': 'Active',
-    'Last Visit': 'N/A',
-    'Next Visit': '12 Jun 2025',
-    'Notes': 'First visit scheduled',
-  },
-  {
-    'Contract ID': 'AMC005',
-    'Customer': 'Elegant Designs',
-    'Machine': 'Casting Machine X1',
-    'Start Date': '12 Mar 2025',
-    'End Date': '11 Mar 2026',
-    'Status': 'Active',
-    'Last Visit': 'N/A',
-    'Next Visit': '12 Jun 2025',
-    'Notes': 'First visit scheduled',
-  },
-  {
-    'Contract ID': 'AMC006',
-    'Customer': 'Classic Jewellers',
-    'Machine': 'Polisher P200',
-    'Start Date': '20 May 2024',
-    'End Date': '19 May 2025',
-    'Status': 'Expiring Soon',
-    'Last Visit': '20 Feb 2025',
-    'Next Visit': '20 May 2025',
-    'Notes': 'Final visit due before renewal',
-  },
-];
-
-final List<Map<String, dynamic>> _dummyAMCVisits = [
-  {
-    'id': 'V001',
-    'contractId': 'AMC001',
-    'customer': 'Royal Jewellers',
-    'machine': 'Casting Machine X1',
-    'date': '5/14/2025',
-    'time': '10:00 AM',
-    'engineer': 'Rahul Sharma',
-    'status': 'Scheduled',
-    'notes': 'Regular quarterly maintenance',
-  },
-  {
-    'id': 'V002',
-    'contractId': 'AMC002',
-    'customer': 'Royal Jewellers',
-    'machine': 'Polisher P200',
-    'date': '5/15/2025',
-    'time': '2:00 PM',
-    'engineer': 'Rahul Sharma',
-    'status': 'Scheduled',
-    'notes': 'Check motor and bearings',
-  },
-  {
-    'id': 'V003',
-    'contractId': 'AMC006',
-    'customer': 'Classic Jewellers',
-    'machine': 'Polisher P200',
-    'date': '5/20/2025',
-    'time': '11:00 AM',
-    'engineer': 'Amit Patel',
-    'status': 'Scheduled',
-    'notes': 'Final visit before contract renewal',
-  },
-  {
-    'id': 'V004',
-    'contractId': 'AMC004',
-    'customer': 'Elegant Designs',
-    'machine': 'Laser Welder LW-20',
-    'date': '5/13/2025',
-    'time': '9:30 AM',
-    'engineer': 'Priya Verma',
-    'status': 'In Progress',
-    'notes': 'Emergency visit for calibration issue',
-  },
-  {
-    'id': 'V005',
-    'contractId': 'AMC005',
-    'customer': 'Elegant Designs',
-    'machine': 'Casting Machine X1',
-    'date': '5/13/2025',
-    'time': '1:30 PM',
-    'engineer': 'Priya Verma',
-    'status': 'Scheduled',
-    'notes': 'Check heating elements and pressure system',
-  },
-];
-
-// Dummy data for dropdowns
-final List<String> _dummyCustomerNames = [
-  'Royal Jewellers',
-  'Star Jewellery',
-  'Elegant Designs',
-  'Modern Creations',
-  'Classic Jewellers',
-];
-
-final List<String> _dummyMachineNames = [
-  'Casting Machine X1',
-  'Polisher P200',
-  'Wax Injector W50',
-  'Laser Welder LW-20',
-];
-
-final List<String> _dummyEngineers = [
-  'Rahul Sharma',
-  'Amit Patel',
-  'Priya Verma',
-  'Sunil Kumar',
-];

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import '../widgets/data_table_widget.dart';
+import '../services/database_service.dart';
+import '../models/import.dart';
+import '../models/customer.dart';
+import 'package:intl/intl.dart';
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
@@ -10,11 +14,18 @@ class ShopScreen extends StatefulWidget {
 
 class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final DatabaseService _databaseService = DatabaseService();
+  
+  bool _isLoading = true;
+  List<Import> _pendingImports = [];
+  List<Import> _completedImports = [];
+  List<Customer> _customers = [];
   
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _loadData();
   }
 
   @override
@@ -22,9 +33,38 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
     _tabController.dispose();
     super.dispose();
   }
+  
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      final allImports = await _databaseService.getImports();
+      _pendingImports = allImports.where((order) => 
+        order.status == 'pending').toList();
+      _completedImports = allImports.where((order) => 
+        order.status == 'delivered').toList();
+      
+      _customers = await _databaseService.getCustomers();
+      
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading data: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -128,35 +168,33 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
             
             // Import Requests Table
             Expanded(
-              child: DataTableWidget(
-                columns: const [
-                  'ID',
-                  'Date',
-                  'Item Name',
-                  'Quantity',
-                  'Status',
-                  'Actions',
-                ],
-                rows: _importRequests.map((request) {
-                  final statusColor = {
-                    'Pending': Colors.orange,
-                    'Processing': Colors.amber,
-                    'Shipped': Colors.blue,
-                    'Delivered': Colors.green,
-                  }[request['status']] ?? Colors.grey;
-                  
-                  return {
-                    'ID': request['id'],
-                    'Date': request['date'],
-                    'Item Name': request['itemName'],
-                    'Quantity': request['quantity'],
-                    'Status': request['status'],
-                    'Actions': request, // Pass the whole request for actions
-                  };
-                }).toList(),
-                onEdit: (row) => _showEditRequestDialog(row),
-                onDelete: null,
-              ),
+              child: _pendingImports.isEmpty
+                ? const Center(child: Text('No pending import requests'))
+                : DataTableWidget(
+                  columns: const [
+                    'ID',
+                    'Date',
+                    'Item Name',
+                    'Quantity',
+                    'Status',
+                    'Actions',
+                  ],
+                  rows: _pendingImports.map((request) {
+                    final formattedDate = request.importDate != null 
+                        ? DateFormat('dd-MMM-yyyy').format(request.importDate!)
+                        : 'N/A';
+                    return {
+                      'ID': request.id.toString(),
+                      'Date': formattedDate,
+                      'Item Name': request.name,
+                      'Quantity': request.quantity.toString(),
+                      'Status': request.status,
+                      'Actions': request, // Pass the whole request for actions
+                    };
+                  }).toList(),
+                  onEdit: (row) => _showEditRequestDialog(row['Actions'] as Import),
+                  onDelete: null,
+                ),
             ),
           ],
         ),
@@ -203,33 +241,36 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
             
             // Import History Table
             Expanded(
-              child: DataTableWidget(
-                columns: const [
-                  'ID',
-                  'Date',
-                  'Item Name',
-                  'Customer',
-                  'YNC Invoice',
-                  'Price (₹)',
-                  'Status',
-                ],
-                rows: _importHistory.map((item) {
-                  final statusColor = {
-                    'Delivered': Colors.green,
-                    'Completed': Colors.purple,
-                    'Canceled': Colors.red,
-                  }[item['status']] ?? Colors.grey;
-                  return {
-                    'ID': item['id'],
-                    'Date': item['date'],
-                    'Item Name': item['itemName'],
-                    'Customer': item['customer'],
-                    'YNC Invoice': item['invoice'],
-                    'Price (₹)': '₹${item['price']}',
-                    'Status': item['status'],
-                  };
-                }).toList(),
-              ),
+              child: _completedImports.isEmpty
+                ? const Center(child: Text('No import history available'))
+                : DataTableWidget(
+                  columns: const [
+                    'ID',
+                    'Date',
+                    'Item Name',
+                    'Customer',
+                    'Invoice',
+                    'Price (₹)',
+                    'Status',
+                  ],
+                  rows: _completedImports.map((item) {
+                    final formattedDate = item.importDate != null
+                        ? DateFormat('dd-MMM-yyyy').format(item.importDate!)
+                        : 'N/A';
+                    return {
+                      'ID': item.id.toString(),
+                      'Date': formattedDate,
+                      'Item Name': item.name,
+                      'Customer': item.customerName ?? 'N/A',
+                      'Invoice': item.invoice ?? 'N/A',
+                      'Price (₹)': NumberFormat.currency(symbol: '₹', decimalDigits: 0)
+                          .format(item.priceInr ?? 0),
+                      'Status': item.status,
+                    };
+                  }).toList(),
+                  onEdit: null,
+                  onDelete: null,
+                ),
             ),
           ],
         ),
@@ -454,6 +495,20 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
   
   // Dialog to create a new import order
   void _showNewImportDialog() {
+    final DateTime now = DateTime.now();
+    final TextEditingController dateController = TextEditingController(
+        text: DateFormat('yyyy-MM-dd').format(now));
+    String? selectedCustomerName;
+    String itemName = '';
+    String partCode = '';
+    String type = 'machine';
+    String serialNo = '';
+    String invoice = '';
+    int quantity = 1;
+    double priceInr = 0;
+    double priceJpy = 0;
+    double priceUsd = 0;
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -473,6 +528,7 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                           labelText: 'Part Code',
                           border: OutlineInputBorder(),
                         ),
+                        onChanged: (value) => partCode = value,
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -482,6 +538,7 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                           labelText: 'Serial No.',
                           border: OutlineInputBorder(),
                         ),
+                        onChanged: (value) => serialNo = value,
                       ),
                     ),
                   ],
@@ -492,6 +549,26 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                     labelText: 'Name',
                     border: OutlineInputBorder(),
                   ),
+                  onChanged: (value) => itemName = value,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(
+                    labelText: 'Type',
+                    border: OutlineInputBorder(),
+                  ),
+                  value: type,
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'machine',
+                      child: Text('Machine'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'part',
+                      child: Text('Part'),
+                    ),
+                  ],
+                  onChanged: (value) => type = value!,
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
@@ -499,19 +576,13 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                     labelText: 'Customer Name',
                     border: OutlineInputBorder(),
                   ),
-                  items: [
-                    'Royal Jewellers',
-                    'Elegant Designs',
-                    'Star Jewellery',
-                    'Classic Jewellers',
-                    'Modern Creations',
-                  ].map((customer) {
+                  items: _customers.map((customer) {
                     return DropdownMenuItem<String>(
-                      value: customer,
-                      child: Text(customer),
+                      value: customer.name,
+                      child: Text(customer.name),
                     );
                   }).toList(),
-                  onChanged: (value) {},
+                  onChanged: (value) => selectedCustomerName = value,
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -519,30 +590,45 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                     Expanded(
                       child: TextFormField(
                         decoration: const InputDecoration(
-                          labelText: 'Year',
+                          labelText: 'Invoice',
                           border: OutlineInputBorder(),
                         ),
-                        initialValue: '2025',
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextFormField(
-                        decoration: const InputDecoration(
-                          labelText: 'YNC Invoice',
-                          border: OutlineInputBorder(),
-                        ),
+                        onChanged: (value) => invoice = value,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
-                  decoration: const InputDecoration(
-                    labelText: 'Invoice Date',
-                    border: OutlineInputBorder(),
-                    suffixIcon: Icon(Icons.calendar_today),
+                  controller: dateController,
+                  decoration: InputDecoration(
+                    labelText: 'Import Date',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.calendar_today),
+                      onPressed: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: now,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) {
+                          dateController.text = DateFormat('yyyy-MM-dd').format(picked);
+                        }
+                      },
+                    ),
                   ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity',
+                    border: OutlineInputBorder(),
+                  ),
+                  initialValue: '1',
+                  keyboardType: TextInputType.number,
+                  onChanged: (value) => quantity = int.tryParse(value) ?? 1,
                 ),
                 const SizedBox(height: 24),
                 const Text(
@@ -563,6 +649,7 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                           prefixIcon: Icon(Icons.currency_yen),
                         ),
                         keyboardType: TextInputType.number,
+                        onChanged: (value) => priceJpy = double.tryParse(value) ?? 0,
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -574,6 +661,7 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                           prefixIcon: Icon(Icons.currency_rupee),
                         ),
                         keyboardType: TextInputType.number,
+                        onChanged: (value) => priceInr = double.tryParse(value) ?? 0,
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -585,6 +673,7 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                           prefixIcon: Icon(Icons.attach_money),
                         ),
                         keyboardType: TextInputType.number,
+                        onChanged: (value) => priceUsd = double.tryParse(value) ?? 0,
                       ),
                     ),
                   ],
@@ -599,8 +688,37 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              // Save new import order logic would go here
+            onPressed: () async {
+              // Find customer ID
+              int? customerId;
+              if (selectedCustomerName != null) {
+                final customer = _customers.firstWhere(
+                  (c) => c.name == selectedCustomerName,
+                  orElse: () => Customer(name: selectedCustomerName!),
+                );
+                
+                customerId = customer.id;
+              }
+              
+              // Create new import order
+              final newImport = Import(
+                partCode: partCode,
+                name: itemName,
+                type: type,
+                customerId: customerId,
+                quantity: quantity,
+                importDate: DateTime.tryParse(dateController.text) ?? now,
+                priceInr: priceInr,
+                priceJpy: priceJpy,
+                priceUsd: priceUsd,
+                serialNo: serialNo.isNotEmpty ? serialNo : null,
+                invoice: invoice.isNotEmpty ? invoice : null,
+                status: 'pending',
+                customerName: selectedCustomerName,
+              );
+              
+              await _databaseService.insertImport(newImport);
+              _loadData(); // Reload data
               Navigator.of(context).pop();
             },
             style: ElevatedButton.styleFrom(
@@ -615,48 +733,85 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
   }
   
   // Dialog to edit an existing request
-  void _showEditRequestDialog(Map<String, dynamic> request) {
+  void _showEditRequestDialog(Import order) {
+    final TextEditingController itemNameController = TextEditingController(text: order.name);
+    final TextEditingController partCodeController = TextEditingController(text: order.partCode);
+    final TextEditingController quantityController = TextEditingController(text: order.quantity.toString());
+    final TextEditingController serialNoController = TextEditingController(text: order.serialNo ?? '');
+    final TextEditingController invoiceController = TextEditingController(text: order.invoice ?? '');
+    String status = order.status.toLowerCase();
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Edit Import Request'),
         content: SizedBox(
           width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Item Name',
-                  border: OutlineInputBorder(),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: partCodeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Part Code',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-                initialValue: request['itemName'],
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Quantity',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: itemNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Item Name',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-                initialValue: request['quantity'].toString(),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: 'Status',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: quantityController,
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
                 ),
-                value: request['status'],
-                items: ['Pending', 'Shipped', 'Delivered'].map((status) {
-                  return DropdownMenuItem<String>(
-                    value: status,
-                    child: Text(status),
-                  );
-                }).toList(),
-                onChanged: (value) {},
-              ),
-            ],
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: serialNoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Serial Number',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: invoiceController,
+                  decoration: const InputDecoration(
+                    labelText: 'Invoice',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    border: OutlineInputBorder(),
+                  ),
+                  value: status,
+                  items: const [
+                    DropdownMenuItem<String>(
+                      value: 'pending',
+                      child: Text('Pending'),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'delivered',
+                      child: Text('Delivered'),
+                    ),
+                  ],
+                  onChanged: (value) => status = value!,
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -665,8 +820,19 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              // Save edited request logic would go here
+            onPressed: () async {
+              // Update the order
+              final updatedOrder = order.copyWith(
+                name: itemNameController.text,
+                partCode: partCodeController.text,
+                quantity: int.tryParse(quantityController.text) ?? order.quantity,
+                serialNo: serialNoController.text.isNotEmpty ? serialNoController.text : null,
+                invoice: invoiceController.text.isNotEmpty ? invoiceController.text : null,
+                status: status,
+              );
+              
+              await _databaseService.updateImport(updatedOrder);
+              _loadData(); // Reload data
               Navigator.of(context).pop();
             },
             style: ElevatedButton.styleFrom(
@@ -681,8 +847,8 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
   }
   
   // Dialog to update the status of a request
-  void _showUpdateStatusDialog(Map<String, dynamic> request) {
-    String currentStatus = request['status'];
+  void _showUpdateStatusDialog(Import order) {
+    String currentStatus = order.status;
     
     showDialog(
       context: context,
@@ -694,7 +860,7 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Item: ${request['itemName']}'),
+              Text('Item: ${order.name}'),
               const SizedBox(height: 16),
               const Text('Current Status:'),
               const SizedBox(height: 8),
@@ -702,10 +868,11 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: {
-                    'Pending': Colors.orange,
-                    'Shipped': Colors.blue,
-                    'Delivered': Colors.green,
-                  }[currentStatus]!.withOpacity(0.1),
+                    'pending': Colors.orange,
+                    'processing': Colors.amber,
+                    'shipped': Colors.blue,
+                    'delivered': Colors.green,
+                  }[currentStatus.toLowerCase()]?.withOpacity(0.1) ?? Colors.grey.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -713,10 +880,11 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: {
-                      'Pending': Colors.orange,
-                      'Shipped': Colors.blue,
-                      'Delivered': Colors.green,
-                    }[currentStatus],
+                      'pending': Colors.orange,
+                      'processing': Colors.amber,
+                      'shipped': Colors.blue,
+                      'delivered': Colors.green,
+                    }[currentStatus.toLowerCase()] ?? Colors.grey,
                   ),
                 ),
               ),
@@ -727,16 +895,14 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                 ),
-                value: currentStatus,
-                items: ['Pending', 'Shipped', 'Delivered'].map((status) {
+                value: currentStatus.toLowerCase(),
+                items: ['pending', 'processing', 'shipped', 'delivered'].map((status) {
                   return DropdownMenuItem<String>(
                     value: status,
-                    child: Text(status),
+                    child: Text(status.substring(0, 1).toUpperCase() + status.substring(1)),
                   );
                 }).toList(),
-                onChanged: (value) {
-                  currentStatus = value!;
-                },
+                onChanged: (value) => currentStatus = value!,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -755,8 +921,11 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              // Update status logic would go here
+            onPressed: () async {
+              // Update the order status
+              final updatedOrder = order.copyWith(status: currentStatus);
+              await _databaseService.updateImport(updatedOrder);
+              _loadData(); // Reload data
               Navigator.of(context).pop();
             },
             style: ElevatedButton.styleFrom(
@@ -770,100 +939,3 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
     );
   }
 }
-
-// Dummy data for import requests
-final List<Map<String, dynamic>> _importRequests = [
-  {
-    'id': 'IR-2025-042',
-    'date': '10-May-2025',
-    'itemName': 'Casting Machine X2',
-    'quantity': 1,
-    'status': 'Shipped',
-  },
-  {
-    'id': 'IR-2025-041',
-    'date': '08-May-2025',
-    'itemName': 'Polisher Parts',
-    'quantity': 15,
-    'status': 'Processing',
-  },
-  {
-    'id': 'IR-2025-040',
-    'date': '05-May-2025',
-    'itemName': 'Laser Welder Parts',
-    'quantity': 8,
-    'status': 'Pending',
-  },
-  {
-    'id': 'IR-2025-039',
-    'date': '01-May-2025',
-    'itemName': 'Wax Injector W60',
-    'quantity': 2,
-    'status': 'Delivered',
-  },
-  {
-    'id': 'IR-2025-038',
-    'date': '28-Apr-2025',
-    'itemName': 'Vacuum Pump Filter',
-    'quantity': 20,
-    'status': 'Delivered',
-  },
-];
-
-// Dummy data for import history
-final List<Map<String, dynamic>> _importHistory = [
-  {
-    'id': 'IR-2025-039',
-    'date': '01-May-2025',
-    'itemName': 'Wax Injector W60',
-    'customer': 'Royal Jewellers',
-    'invoice': 'JP24812',
-    'price': '280,000',
-    'status': 'Delivered',
-  },
-  {
-    'id': 'IR-2025-038',
-    'date': '28-Apr-2025',
-    'itemName': 'Vacuum Pump Filter',
-    'customer': 'Elegant Designs',
-    'invoice': 'JP24798',
-    'price': '45,000',
-    'status': 'Delivered',
-  },
-  {
-    'id': 'IR-2025-037',
-    'date': '25-Apr-2025',
-    'itemName': 'Polisher P200',
-    'customer': 'Star Jewellery',
-    'invoice': 'JP24781',
-    'price': '320,000',
-    'status': 'Delivered',
-  },
-  {
-    'id': 'IR-2025-036',
-    'date': '20-Apr-2025',
-    'itemName': 'Casting Flask 100mm',
-    'customer': 'Modern Creations',
-    'invoice': 'JP24766',
-    'price': '15,000',
-    'status': 'Completed',
-  },
-  {
-    'id': 'IR-2025-035',
-    'date': '18-Apr-2025',
-    'itemName': 'Laser Lens 50mm',
-    'customer': 'Classic Jewellers',
-    'invoice': 'JP24754',
-    'price': '85,000',
-    'status': 'Completed',
-  },
-  {
-    'id': 'IR-2025-034',
-    'date': '15-Apr-2025',
-    'itemName': 'Wax Nozzle 0.8mm (Pack of 10)',
-    'customer': 'Elegant Designs',
-    'invoice': 'JP24742',
-    'price': '12,000',
-    'status': 'Completed',
-  },
-];

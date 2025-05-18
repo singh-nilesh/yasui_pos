@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../widgets/data_table_widget.dart';
+import '../services/database_service.dart';
+import '../models/inventory_item.dart';
+import 'package:intl/intl.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -9,6 +12,9 @@ class InventoryScreen extends StatefulWidget {
 }
 
 class _InventoryScreenState extends State<InventoryScreen> {
+  final DatabaseService _databaseService = DatabaseService();
+  bool _isLoading = true;
+  
   // Selected filter
   String _selectedFilter = 'All Items';
   final List<String> _filterOptions = [
@@ -19,40 +25,92 @@ class _InventoryScreenState extends State<InventoryScreen> {
     'Spare Parts Only'
   ];
   
-  // Filtered data
+  // Inventory data
+  List<InventoryItem> _allInventoryItems = [];
   List<Map<String, dynamic>> _filteredItems = [];
   
   @override
   void initState() {
     super.initState();
-    // Initialize with all items
-    _filteredItems = [..._dummyInventory];
+    _loadInventoryData();
+  }
+  
+  Future<void> _loadInventoryData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      // Load inventory items
+      _allInventoryItems = await _databaseService.getInventoryItems();
+      
+      // Apply default filter (All Items)
+      _applyFilter(_selectedFilter);
+      
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading inventory data: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
   
   void _applyFilter(String filter) {
+    // Convert inventory items to the format expected by the DataTableWidget
+    List<Map<String, dynamic>> items = _allInventoryItems.map((item) {
+      final formattedDate = DateFormat('dd MMM yyyy').format(item.lastUpdated);
+      
+      final formattedPrice = NumberFormat.currency(
+        symbol: '₹',
+        decimalDigits: 0
+      ).format(item.unitPrice);
+      
+      return {
+        'id': item.id,
+        'Name': item.name,
+        'Type': item.type,
+        'Quantity': item.quantity.toString(),
+        'Unit Price': formattedPrice,
+        'Last Updated': formattedDate,
+        'Notes': item.notes,
+        'Threshold': item.threshold?.toString() ?? 'N/A', // Add threshold
+      };
+    }).toList();
+    
     setState(() {
       _selectedFilter = filter;
       
       switch (filter) {
         case 'All Items':
-          _filteredItems = [..._dummyInventory];
+          _filteredItems = items;
           break;
         case 'Low Stock':
-          _filteredItems = _dummyInventory
-              .where((item) => int.parse(item['Quantity'].toString()) < 5)
-              .toList();
+          _filteredItems = items.where((item) {
+            final itemName = item['Name'].toString();
+            final quantity = int.parse(item['Quantity'].toString());
+            final threshold = int.tryParse(item['Threshold'].toString()) ?? 5; // Default threshold
+            return quantity < threshold;
+          }).toList();
           break;
         case 'Recently Updated':
-          // In a real app, you would filter by date
-          _filteredItems = [..._dummyInventory].take(3).toList();
+          _filteredItems = [...items];
+          _filteredItems.sort((a, b) {
+            final aDate = a['Last Updated'].toString();
+            final bDate = b['Last Updated'].toString();
+            return bDate.compareTo(aDate); // Sort descending
+          });
+          _filteredItems = _filteredItems.take(5).toList(); // Take top 5
           break;
         case 'Machines Only':
-          _filteredItems = _dummyInventory
+          _filteredItems = items
               .where((item) => item['Type'] == 'Machine')
               .toList();
           break;
         case 'Spare Parts Only':
-          _filteredItems = _dummyInventory
+          _filteredItems = items
               .where((item) => item['Type'] == 'Spare Part')
               .toList();
           break;
@@ -62,6 +120,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
   
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -129,7 +191,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                   onChanged: (value) {
-                    // Implement search functionality
+                    if (value.isEmpty) {
+                      _applyFilter(_selectedFilter);
+                      return;
+                    }
+                    
+                    final lowerCaseQuery = value.toLowerCase();
+                    setState(() {
+                      _filteredItems = _filteredItems.where((item) {
+                        final name = item['Name'].toString().toLowerCase();
+                        final type = item['Type'].toString().toLowerCase();
+                        return name.contains(lowerCaseQuery) || 
+                               type.contains(lowerCaseQuery);
+                      }).toList();
+                    });
                   },
                 ),
               ),
@@ -189,7 +264,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         IconButton(
                           icon: const Icon(Icons.refresh),
                           onPressed: () {
-                            _applyFilter('All Items');
+                            _loadInventoryData();
                           },
                           tooltip: 'Refresh',
                         ),
@@ -198,25 +273,39 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     const SizedBox(height: 8),
                     // Table
                     Expanded(
-                      child: DataTableWidget(
-                        columns: const [
-                          'Name',
-                          'Type',
-                          'Quantity',
-                          'Unit Price',
-                          'Last Updated',
-                          'Actions'
-                        ],
-                        rows: _filteredItems,
-                        onEdit: (row) {
-                          // Edit item logic
-                          _showEditItemDialog(row);
-                        },
-                        onDelete: (row) {
-                          // Delete item logic
-                          _showDeleteConfirmDialog(row);
-                        },
-                      ),
+                      child: _filteredItems.isEmpty
+                        ? const Center(child: Text('No items found'))
+                        : DataTableWidget(
+                          columns: const [
+                            'Name',
+                            'Type',
+                            'Quantity',
+                            'Unit Price',
+                            'Last Updated',
+                            'Actions'
+                          ],
+                          rows: _filteredItems,
+                          onEdit: (row) {
+                            // Find the inventory item from the original data
+                            final id = row['id'];
+                            final inventoryItem = _allInventoryItems.firstWhere(
+                              (item) => item.id == id, 
+                              orElse: () => InventoryItem(
+                                id: 0, 
+                                name: '', 
+                                type: '',
+                                quantity: 0, 
+                                unitPrice: 0, 
+                                lastUpdated: DateTime.now(), 
+                                notes: ''
+                              )
+                            );
+                            _showEditItemDialog(inventoryItem);
+                          },
+                          onDelete: (row) {
+                            _showDeleteConfirmDialog(row);
+                          },
+                        ),
                     ),
                   ],
                 ),
@@ -230,6 +319,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
   
   // Dialog to add a new item
   void _showAddItemDialog() {
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController quantityController = TextEditingController();
+    final TextEditingController unitPriceController = TextEditingController();
+    final TextEditingController notesController = TextEditingController();
+    final TextEditingController thresholdController = TextEditingController(text: '5');
+    String type = 'Spare Part';
+    
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -243,6 +339,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 children: [
                   // Name field
                   TextFormField(
+                    controller: nameController,
                     decoration: const InputDecoration(
                       labelText: 'Name',
                       border: OutlineInputBorder(),
@@ -250,26 +347,38 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ),
                   const SizedBox(height: 16),
                   // Type dropdown
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Type',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Machine',
-                        child: Text('Machine'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Spare Part',
-                        child: Text('Spare Part'),
-                      ),
-                    ],
-                    onChanged: (value) {},
+                  StatefulBuilder(
+                    builder: (context, setState) {
+                      return DropdownButtonFormField<String>(
+                        value: type,
+                        decoration: const InputDecoration(
+                          labelText: 'Type',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'Machine',
+                            child: Text('Machine'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Spare Part',
+                            child: Text('Spare Part'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() {
+                              type = value;
+                            });
+                          }
+                        },
+                      );
+                    },
                   ),
                   const SizedBox(height: 16),
                   // Quantity field
                   TextFormField(
+                    controller: quantityController,
                     decoration: const InputDecoration(
                       labelText: 'Quantity',
                       border: OutlineInputBorder(),
@@ -279,6 +388,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   const SizedBox(height: 16),
                   // Price field
                   TextFormField(
+                    controller: unitPriceController,
                     decoration: const InputDecoration(
                       labelText: 'Unit Price (₹)',
                       border: OutlineInputBorder(),
@@ -288,11 +398,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   const SizedBox(height: 16),
                   // Notes/Specs field
                   TextFormField(
+                    controller: notesController,
                     decoration: const InputDecoration(
                       labelText: 'Notes/Specifications',
                       border: OutlineInputBorder(),
                     ),
                     maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  // Threshold field
+                  TextFormField(
+                    controller: thresholdController,
+                    decoration: const InputDecoration(
+                      labelText: 'Threshold',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
                   ),
                 ],
               ),
@@ -306,8 +427,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 // Add item logic
+                final newItem = InventoryItem(
+                  id: 0,
+                  name: nameController.text,
+                  type: type,
+                  quantity: int.tryParse(quantityController.text) ?? 0,
+                  unitPrice: double.tryParse(unitPriceController.text) ?? 0,
+                  lastUpdated: DateTime.now(),
+                  notes: notesController.text,
+                  threshold: int.tryParse(thresholdController.text) ?? 5, // Add threshold
+                );
+                
+                await _databaseService.insertInventoryItem(newItem);
+                
+                _loadInventoryData(); // Reload data
                 Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(
@@ -323,7 +458,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
   
   // Dialog to edit an existing item
-  void _showEditItemDialog(Map<String, dynamic> item) {
+  void _showEditItemDialog(InventoryItem item) {
+    final TextEditingController nameController = TextEditingController(text: item.name);
+    final TextEditingController quantityController = TextEditingController(text: item.quantity.toString());
+    final TextEditingController unitPriceController = TextEditingController(text: item.unitPrice.toString());
+    final TextEditingController notesController = TextEditingController(text: item.notes);
+    final TextEditingController thresholdController = TextEditingController(text: item.threshold?.toString() ?? '5');
+    String type = item.type;
+    
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -337,7 +479,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 children: [
                   // Name field
                   TextFormField(
-                    initialValue: item['Name'].toString(),
+                    controller: nameController,
                     decoration: const InputDecoration(
                       labelText: 'Name',
                       border: OutlineInputBorder(),
@@ -345,28 +487,38 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ),
                   const SizedBox(height: 16),
                   // Type dropdown
-                  DropdownButtonFormField<String>(
-                    value: item['Type'].toString(),
-                    decoration: const InputDecoration(
-                      labelText: 'Type',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Machine',
-                        child: Text('Machine'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Spare Part',
-                        child: Text('Spare Part'),
-                      ),
-                    ],
-                    onChanged: (value) {},
+                  StatefulBuilder(
+                    builder: (context, setState) {
+                      return DropdownButtonFormField<String>(
+                        value: type,
+                        decoration: const InputDecoration(
+                          labelText: 'Type',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'Machine',
+                            child: Text('Machine'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Spare Part',
+                            child: Text('Spare Part'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() {
+                              type = value;
+                            });
+                          }
+                        },
+                      );
+                    },
                   ),
                   const SizedBox(height: 16),
                   // Quantity field
                   TextFormField(
-                    initialValue: item['Quantity'].toString(),
+                    controller: quantityController,
                     decoration: const InputDecoration(
                       labelText: 'Quantity',
                       border: OutlineInputBorder(),
@@ -376,7 +528,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   const SizedBox(height: 16),
                   // Price field
                   TextFormField(
-                    initialValue: item['Unit Price'].toString().replaceAll('₹', ''),
+                    controller: unitPriceController,
                     decoration: const InputDecoration(
                       labelText: 'Unit Price (₹)',
                       border: OutlineInputBorder(),
@@ -386,12 +538,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   const SizedBox(height: 16),
                   // Notes/Specs field
                   TextFormField(
-                    initialValue: item['Notes'] ?? '',
+                    controller: notesController,
                     decoration: const InputDecoration(
                       labelText: 'Notes/Specifications',
                       border: OutlineInputBorder(),
                     ),
                     maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  // Threshold field
+                  TextFormField(
+                    controller: thresholdController,
+                    decoration: const InputDecoration(
+                      labelText: 'Threshold',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
                   ),
                 ],
               ),
@@ -405,8 +567,21 @@ class _InventoryScreenState extends State<InventoryScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 // Update item logic
+                final updatedItem = InventoryItem(
+                  id: item.id,
+                  name: nameController.text,
+                  type: type,
+                  quantity: int.tryParse(quantityController.text) ?? 0,
+                  unitPrice: double.tryParse(unitPriceController.text) ?? 0,
+                  lastUpdated: DateTime.now(),
+                  notes: notesController.text,
+                  threshold: int.tryParse(thresholdController.text) ?? 5, // Update threshold
+                );
+                
+                await _databaseService.updateInventoryItem(updatedItem);
+                _loadInventoryData(); // Reload data
                 Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(
@@ -439,8 +614,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 // Delete item logic
+                await _databaseService.deleteInventoryItem(item['id']);
+                _loadInventoryData(); // Reload data
                 Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(
@@ -457,8 +634,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
   
   // Dialog for low stock alerts
   void _showLowStockAlertDialog() {
-    final lowStockItems = _dummyInventory
-        .where((item) => int.parse(item['Quantity'].toString()) < 5)
+    final lowStockItems = _filteredItems
+        .where((item) {
+          final itemName = item['Name'].toString();
+          final quantity = int.parse(item['Quantity'].toString());
+          final threshold = int.tryParse(item['Threshold'].toString()) ?? 5; // Default threshold
+          return quantity < threshold;
+        })
         .toList();
     
     showDialog(
@@ -483,15 +665,31 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     itemCount: lowStockItems.length,
                     itemBuilder: (context, index) {
                       final item = lowStockItems[index];
+                      final threshold = int.tryParse(item['Threshold'].toString()) ?? 5;
+                      
                       return ListTile(
                         title: Text(item['Name'].toString()),
                         subtitle: Text(
-                          'Type: ${item['Type']} | Current Quantity: ${item['Quantity']}',
+                          'Type: ${item['Type']} | Current Quantity: ${item['Quantity']} | Threshold: $threshold',
                         ),
                         trailing: ElevatedButton(
                           onPressed: () {
-                            // Order more logic
                             Navigator.pop(context);
+                            // Find the inventory item and show edit dialog
+                            final id = item['id'];
+                            final inventoryItem = _allInventoryItems.firstWhere(
+                              (i) => i.id == id,
+                              orElse: () => InventoryItem(
+                                id: 0, 
+                                name: '', 
+                                type: '',
+                                quantity: 0, 
+                                unitPrice: 0, 
+                                lastUpdated: DateTime.now(),
+                                notes: ''
+                              )
+                            );
+                            _showEditItemDialog(inventoryItem);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.orange,
@@ -510,181 +708,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
               },
               child: const Text('Close'),
             ),
-            ElevatedButton(
-              onPressed: () {
-                // Configure threshold logic
-                _showThresholdSettingsDialog();
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A237E),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Configure Thresholds'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  
-  // Dialog to configure thresholds
-  void _showThresholdSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Low Stock Thresholds'),
-          content: SizedBox(
-            width: 500,
-            height: 300,
-            child: ListView.builder(
-              itemCount: _dummyThresholds.length,
-              itemBuilder: (context, index) {
-                final threshold = _dummyThresholds[index];
-                return ListTile(
-                  title: Text(threshold['itemName'].toString()),
-                  subtitle: Text('Current Threshold: ${threshold['threshold']}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () {
-                          // Edit threshold logic
-                        },
-                        tooltip: 'Edit',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () {
-                          // Delete threshold logic
-                        },
-                        tooltip: 'Delete',
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Close'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                // Add new threshold logic
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A237E),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Add New Threshold'),
-            ),
           ],
         );
       },
     );
   }
 }
-
-// Dummy Data for Inventory
-final List<Map<String, dynamic>> _dummyInventory = [
-  {
-    'Name': 'Casting Machine X1',
-    'Type': 'Machine',
-    'Quantity': '3',
-    'Unit Price': '₹180,000',
-    'Last Updated': '10 May 2025',
-    'Notes': 'Advanced casting machine for jewelry production'
-  },
-  {
-    'Name': 'Polisher P200',
-    'Type': 'Machine',
-    'Quantity': '5',
-    'Unit Price': '₹85,000',
-    'Last Updated': '08 May 2025',
-    'Notes': 'High-speed polishing machine'
-  },
-  {
-    'Name': 'Wax Injector W50',
-    'Type': 'Machine',
-    'Quantity': '2',
-    'Unit Price': '₹120,000',
-    'Last Updated': '05 May 2025',
-    'Notes': 'Digital wax injector for precision molds'
-  },
-  {
-    'Name': 'Laser Welder LW-20',
-    'Type': 'Machine',
-    'Quantity': '1',
-    'Unit Price': '₹250,000',
-    'Last Updated': '01 May 2025',
-    'Notes': 'High-precision laser welder for fine jewelry'
-  },
-  {
-    'Name': 'Heating Element',
-    'Type': 'Spare Part',
-    'Quantity': '15',
-    'Unit Price': '₹5,000',
-    'Last Updated': '12 May 2025',
-    'Notes': 'Compatible with Casting Machine X1'
-  },
-  {
-    'Name': 'Control Board',
-    'Type': 'Spare Part',
-    'Quantity': '8',
-    'Unit Price': '₹12,000',
-    'Last Updated': '11 May 2025',
-    'Notes': 'Digital control board for multiple machines'
-  },
-  {
-    'Name': 'Pressure Valve',
-    'Type': 'Spare Part',
-    'Quantity': '20',
-    'Unit Price': '₹3,500',
-    'Last Updated': '09 May 2025',
-    'Notes': 'Industrial-grade pressure valve'
-  },
-  {
-    'Name': 'Motor Assembly',
-    'Type': 'Spare Part',
-    'Quantity': '5',
-    'Unit Price': '₹18,000',
-    'Last Updated': '07 May 2025',
-    'Notes': 'For Polisher P200 machines'
-  },
-  {
-    'Name': 'Wax Nozzle',
-    'Type': 'Spare Part',
-    'Quantity': '30',
-    'Unit Price': '₹1,200',
-    'Last Updated': '06 May 2025',
-    'Notes': 'Precision nozzles for Wax Injector W50'
-  },
-  {
-    'Name': 'Laser Tube',
-    'Type': 'Spare Part',
-    'Quantity': '3',
-    'Unit Price': '₹40,000',
-    'Last Updated': '03 May 2025',
-    'Notes': 'Replacement tube for Laser Welder LW-20'
-  },
-];
-
-// Dummy thresholds for low stock alerts
-final List<Map<String, dynamic>> _dummyThresholds = [
-  {'itemName': 'Casting Machine X1', 'threshold': 2},
-  {'itemName': 'Polisher P200', 'threshold': 3},
-  {'itemName': 'Wax Injector W50', 'threshold': 2},
-  {'itemName': 'Laser Welder LW-20', 'threshold': 1},
-  {'itemName': 'Heating Element', 'threshold': 5},
-  {'itemName': 'Control Board', 'threshold': 3},
-  {'itemName': 'Motor Assembly', 'threshold': 5},
-  {'itemName': 'Laser Tube', 'threshold': 2},
-];

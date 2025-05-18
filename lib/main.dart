@@ -5,8 +5,17 @@ import 'screens/shop_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/customers_screen.dart';
 import 'screens/amc_screen.dart';
+import 'screens/db_inspector_screen.dart';
+import 'services/database_service.dart';
 
-void main() {
+void main() async {
+  // Ensure Flutter is initialized
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize database
+  final databaseService = DatabaseService();
+  await databaseService.database;
+  
   runApp(const YasuiPosApp());
 }
 
@@ -105,6 +114,11 @@ class _MainLayoutState extends State<MainLayout> {
       'icon': Icons.event_repeat_rounded,
       'label': 'AMC',
       'screen': AMCScreen(),
+    },
+    {
+      'icon': Icons.storage,
+      'label': 'DB Inspector',
+      'screen': DBInspectorScreen(),
     },
   ];
 
